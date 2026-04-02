@@ -173,7 +173,12 @@ def analyze():
         'comments': processed_comments,
         'statistics': stats
     })
+@app.route('/')
+def home():
+    return jsonify({'status': 'YouTube Comment Classifier API is running!'})
 
+@app.route('/routes')
+def list_routes():
 @app.route('/routes')
 def list_routes():
     import urllib
