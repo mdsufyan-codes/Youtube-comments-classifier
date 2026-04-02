@@ -3,7 +3,6 @@ import re
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from textblob import TextBlob
-import pandas as pd
 from urllib.parse import urlparse, parse_qs
 import requests
 from bs4 import BeautifulSoup
@@ -15,18 +14,16 @@ CORS(app)
 
 # Configuration
 YT_API_KEY = os.getenv('YT_API_KEY')
-print("YT_API_KEY loaded:", YT_API_KEY)  # Debug print
+print("YT_API_KEY loaded:", YT_API_KEY)
 MAX_COMMENTS = 100
 
 def clean_text(text):
-    """Clean text for sentiment analysis"""
     if not text:
         return ""
     text = re.sub(r'[^\w\s]', ' ', text.lower())
     return ' '.join(text.split())
 
 def analyze_sentiment(text):
-    """Perform sentiment analysis using TextBlob"""
     analysis = TextBlob(text)
     polarity = analysis.sentiment.polarity
     return {
@@ -36,9 +33,7 @@ def analyze_sentiment(text):
     }
 
 def extract_video_id(url):
-    """Extract video ID while ignoring playlist parameters"""
-    # Strip all parameters after the video ID
-    clean_url = url.split('&')[0]  # Removes &list=... and other params
+    clean_url = url.split('&')[0]
     patterns = [
         r'(?:youtube\.com/watch\?v=|youtu\.be/)([\w-]{11})',
         r'(?:embed/|v/|watch\?v=)([\w-]{11})'
@@ -50,9 +45,7 @@ def extract_video_id(url):
     return None
 
 def get_video_details(video_id):
-    """Get video details using web scraping fallback"""
     try:
-        # Try with pytube first
         from pytube import YouTube
         yt = YouTube(f'https://youtube.com/watch?v={video_id}')
         return {
@@ -61,7 +54,6 @@ def get_video_details(video_id):
             'author': yt.author
         }
     except:
-        # Fallback to web scraping
         try:
             url = f'https://www.youtube.com/watch?v={video_id}'
             response = requests.get(url, timeout=10)
@@ -77,15 +69,12 @@ def get_video_details(video_id):
             return None
 
 def get_comments(video_id, max_comments):
-    """Get comments with multiple fallback methods"""
     comments = []
     
-    # Method 1: YouTube API (if key available)
     if YT_API_KEY:
         try:
             from googleapiclient.discovery import build
             youtube = build('youtube', 'v3', developerKey=YT_API_KEY)
-            print("YouTube API: Fetching comments for video_id:", video_id)  # Debug print
             results = youtube.commentThreads().list(
                 part='snippet',
                 videoId=video_id,
@@ -108,13 +97,10 @@ def get_comments(video_id, max_comments):
         except:
             pass
     
-    # Method 2: Web scraping fallback
     try:
         url = f'https://www.youtube.com/watch?v={video_id}'
         response = requests.get(url, timeout=10)
         soup = BeautifulSoup(response.text, 'html.parser')
-        
-        # Find comment elements (this might change as YouTube updates)
         comment_elements = soup.select('yt-formatted-string#content-text')
         for element in comment_elements[:max_comments]:
             comments.append({
@@ -141,17 +127,14 @@ def analyze():
     
     max_comments = min(int(data.get('max_comments', MAX_COMMENTS)), 200)
     
-    # Get video details
     video_details = get_video_details(video_id)
     if not video_details:
         return jsonify({'error': 'Could not fetch video details'}), 400
     
-    # Get comments
     raw_comments = get_comments(video_id, max_comments)
     if not raw_comments:
         return jsonify({'error': 'No comments found or comments disabled'}), 404
     
-    # Process comments
     processed_comments = []
     for comment in raw_comments:
         cleaned = clean_text(comment['text'])
@@ -164,14 +147,20 @@ def analyze():
         })
     
     # Calculate statistics
-    df = pd.DataFrame(processed_comments)
+    total = len(processed_comments)
+    positive = sum(1 for c in processed_comments if c['sentiment'] == 'positive')
+    negative = sum(1 for c in processed_comments if c['sentiment'] == 'negative')
+    neutral = sum(1 for c in processed_comments if c['sentiment'] == 'neutral')
+    avg_polarity = round(sum(c['polarity'] for c in processed_comments) / total, 4)
+    avg_subjectivity = round(sum(c['subjectivity'] for c in processed_comments) / total, 4)
+
     stats = {
-        'total': len(processed_comments),
-        'positive': len(df[df['sentiment'] == 'positive']),
-        'negative': len(df[df['sentiment'] == 'negative']),
-        'neutral': len(df[df['sentiment'] == 'neutral']),
-        'avg_polarity': round(df['polarity'].mean(), 4),
-        'avg_subjectivity': round(df['subjectivity'].mean(), 4)
+        'total': total,
+        'positive': positive,
+        'negative': negative,
+        'neutral': neutral,
+        'avg_polarity': avg_polarity,
+        'avg_subjectivity': avg_subjectivity
     }
     
     return jsonify({
