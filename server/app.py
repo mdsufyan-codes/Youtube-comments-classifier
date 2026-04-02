@@ -1,3 +1,4 @@
+from flask import Flask, request, jsonify, send_from_directory
 import os
 import re
 from flask import Flask, request, jsonify
@@ -175,7 +176,7 @@ def analyze():
     })
 @app.route('/')
 def home():
-    return jsonify({'status': 'YouTube Comment Classifier API is running!'})
+    return send_from_directory('../client', 'index.html')
 
 @app.route('/routes')
 def list_routes():
